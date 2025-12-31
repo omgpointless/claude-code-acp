@@ -19,6 +19,12 @@ import * as fs from "node:fs/promises";
 
 import { sleep, unreachable, extractLinesWithByteLimit } from "./utils.js";
 import { acpToolNames } from "./tools.js";
+import {
+  AskUserQuestionInput,
+  AskUserQuestionInputSchema,
+  hasCustomCapability,
+  preferAcpToolInstruction,
+} from "./capabilities.js";
 
 export const SYSTEM_REMINDER = `
 
@@ -35,6 +41,7 @@ const unqualifiedToolNames = {
   bash: "Bash",
   killShell: "KillShell",
   bashOutput: "BashOutput",
+  askUserQuestion: "AskUserQuestion",
 };
 
 export function createMcpServer(
@@ -631,6 +638,90 @@ In sessions with ${acpToolNames.killShell} always use it instead of KillShell.`,
             unreachable(bgTerm);
             throw new Error("Unexpected background terminal status");
           }
+        }
+      },
+    );
+  }
+
+  // Custom capability: AskUserQuestion
+  if (hasCustomCapability(clientCapabilities, "ui.askUserQuestion")) {
+    server.registerTool(
+      unqualifiedToolNames.askUserQuestion,
+      {
+        title: unqualifiedToolNames.askUserQuestion,
+        description: `Use this tool when you need to ask the user questions during execution.
+
+${preferAcpToolInstruction("AskUserQuestion")}
+
+This allows you to:
+1. Gather user preferences or requirements
+2. Clarify ambiguous instructions
+3. Get decisions on implementation choices as you work
+4. Offer choices to the user about what direction to take
+
+Usage notes:
+- Users will always be able to select "Other" to provide custom text input
+- Use multiSelect: true to allow multiple answers to be selected for a question
+- If you recommend a specific option, make that the first option in the list and add "(Recommended)" at the end of the label
+- Provide 2-4 options per question, with clear labels and descriptions`,
+        inputSchema: {
+          questions: AskUserQuestionInputSchema.shape.questions,
+        },
+        annotations: {
+          title: "Ask user question",
+          readOnlyHint: true,
+          destructiveHint: false,
+          openWorldHint: false,
+          idempotentHint: false,
+        },
+      },
+      async (input: AskUserQuestionInput) => {
+        try {
+          const session = agent.sessions[sessionId];
+          if (!session) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "Session not found",
+                },
+              ],
+            };
+          }
+
+          const response = await agent.askUserQuestion({
+            sessionId,
+            questions: input.questions,
+          });
+
+          if (response.cancelled) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "User cancelled the question",
+                },
+              ],
+            };
+          }
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(response.answers, null, 2),
+              },
+            ],
+          };
+        } catch (error: any) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Asking user question failed: " + error.message,
+              },
+            ],
+          };
         }
       },
     );

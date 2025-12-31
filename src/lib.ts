@@ -31,6 +31,23 @@ export {
   type PermissionCheckResult,
   type SettingsManagerOptions,
 } from "./settings.js";
+export {
+  CUSTOM_CAPABILITY_NAMESPACE,
+  CUSTOM_METHOD_PREFIX,
+  CUSTOM_CAPABILITY_REGISTRY,
+  getCustomCapabilities,
+  hasCustomCapability,
+  getActiveCustomCapabilities,
+  getCustomMethodName,
+  preferAcpToolInstruction,
+  type ClaudeAcpCustomCapabilities,
+  type CustomCapabilityDefinition,
+  type AskUserQuestionRequest,
+  type AskUserQuestionResponse,
+  type AskUserQuestionInput,
+  type AskUserQuestionQuestion,
+  type AskUserQuestionOption,
+} from "./capabilities.js";
 
 // Export types
 export type { ClaudePlanEntry } from "./tools.js";

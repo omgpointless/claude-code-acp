@@ -60,6 +60,12 @@ import { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import { BetaContentBlock, BetaRawContentBlockDelta } from "@anthropic-ai/sdk/resources/beta.mjs";
 import packageJson from "../package.json" with { type: "json" };
 import { randomUUID } from "node:crypto";
+import {
+  AskUserQuestionRequest,
+  AskUserQuestionResponse,
+  getActiveCustomCapabilities,
+  getCustomMethodName,
+} from "./capabilities.js";
 
 export const CLAUDE_CONFIG_DIR = process.env.CLAUDE ?? path.join(os.homedir(), ".claude");
 
@@ -462,6 +468,19 @@ export class ClaudeAcpAgent implements Agent {
     return response;
   }
 
+  /**
+   * Ask the user a question via the client UI.
+   * This is a custom capability - client must advertise support in
+   * clientCapabilities._meta["claude-acp"].ui.askUserQuestion
+   */
+  async askUserQuestion(params: AskUserQuestionRequest): Promise<AskUserQuestionResponse> {
+    const response = await this.client.extMethod(
+      getCustomMethodName("askUserQuestion"),
+      params as unknown as Record<string, unknown>,
+    );
+    return response as unknown as AskUserQuestionResponse;
+  }
+
   canUseTool(sessionId: string): CanUseTool {
     return async (toolName, toolInput, { signal, suggestions, toolUseID }) => {
       const session = this.sessions[sessionId];
@@ -670,10 +689,16 @@ export class ClaudeAcpAgent implements Agent {
       extraArgs["session-id"] = sessionId;
     }
 
+    // Configure thinking tokens from environment variable
+    const maxThinkingTokens = process.env.MAX_THINKING_TOKENS
+      ? parseInt(process.env.MAX_THINKING_TOKENS, 10)
+      : undefined;
+
     const options: Options = {
       systemPrompt,
       settingSources: ["user", "project", "local"],
       stderr: (err) => this.logger.error(err),
+      ...(maxThinkingTokens !== undefined && { maxThinkingTokens }),
       ...userProvidedOptions,
       // Override certain fields that must be controlled by ACP
       cwd: params.cwd,
@@ -727,6 +752,11 @@ export class ClaudeAcpAgent implements Agent {
         allowedTools.push(acpToolNames.bashOutput, acpToolNames.killShell);
         disallowedTools.push("Bash", "BashOutput", "KillShell");
       }
+
+      // Custom capabilities (advertised in _meta["claude-acp"])
+      const customCaps = getActiveCustomCapabilities(this.clientCapabilities);
+      allowedTools.push(...customCaps.allowedTools);
+      disallowedTools.push(...customCaps.disallowedTools);
     } else {
       // When built-in tools are disabled, explicitly disallow all of them
       disallowedTools.push(
@@ -773,14 +803,6 @@ export class ClaudeAcpAgent implements Agent {
       prompt: input,
       options,
     });
-
-    // Configure thinking tokens from environment variable
-    const maxThinkingTokens = process.env.MAX_THINKING_TOKENS
-      ? parseInt(process.env.MAX_THINKING_TOKENS, 10)
-      : null;
-    if (maxThinkingTokens !== null) {
-      await q.setMaxThinkingTokens(maxThinkingTokens);
-    }
 
     this.sessions[sessionId] = {
       query: q,
