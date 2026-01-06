@@ -91,6 +91,28 @@ type BackgroundTerminal =
     };
 
 /**
+ * Extended _meta capabilities for Claude Code specific features.
+ * Clients declare these via: { clientCapabilities: { _meta: { ... } } }
+ *
+ * Available meta capabilities:
+ * - askUserQuestion: boolean | object - Enable AskUserQuestion tool support
+ * - allowBuiltInBash: boolean - Allow built-in Bash tool (for skills compatibility)
+ */
+export interface ClaudeCodeMetaCapabilities {
+  /**
+   * When true, allows the built-in Bash tool to be used instead of forcing
+   * all bash commands through the ACP terminal (mcp__acp__Bash).
+   *
+   * This is useful when:
+   * - Skills need to invoke bash commands (skills call "Bash", not "mcp__acp__Bash")
+   * - The client trusts the user's local Claude Code permission settings
+   *
+   * Default: false (built-in Bash is disallowed)
+   */
+  allowBuiltInBash?: boolean;
+}
+
+/**
  * Extra metadata that can be given to Claude Code when creating a new session.
  */
 export type NewSessionMeta = {
@@ -826,7 +848,11 @@ export class ClaudeAcpAgent implements Agent {
       }
       if (this.clientCapabilities?.terminal) {
         allowedTools.push(acpToolNames.bashOutput, acpToolNames.killShell);
-        disallowedTools.push("Bash", "BashOutput", "KillShell");
+        // Check if client opts into allowing built-in Bash (for skills compatibility, etc.)
+        const meta = this.clientCapabilities?._meta as ClaudeCodeMetaCapabilities | undefined;
+        if (!meta?.allowBuiltInBash) {
+          disallowedTools.push("Bash", "BashOutput", "KillShell");
+        }
       }
     } else {
       // When built-in tools are disabled, explicitly disallow all of them

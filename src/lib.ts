@@ -6,6 +6,7 @@ export {
   streamEventToAcpNotifications,
   type ToolUpdateMeta,
   type NewSessionMeta,
+  type ClaudeCodeMetaCapabilities,
 } from "./acp-agent.js";
 export {
   loadManagedSettings,
