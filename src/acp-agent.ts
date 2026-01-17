@@ -175,6 +175,26 @@ type ToolUseCache = {
 // Bypass Permissions doesn't work if we are a root/sudo user
 const IS_ROOT = (process.geteuid?.() ?? process.getuid?.()) === 0;
 
+/** Option for an AskUserQuestion question */
+export interface AskUserQuestionOption {
+  label: string;
+  description?: string;
+}
+
+/** Single question in an AskUserQuestion tool call */
+export interface AskUserQuestionItem {
+  question: string;
+  header?: string;
+  multiSelect: boolean;
+  options: AskUserQuestionOption[];
+}
+
+/** Input schema for AskUserQuestion tool */
+export interface AskUserQuestionInput {
+  questions: AskUserQuestionItem[];
+  answers?: Record<string, string | string[]>;
+}
+
 /**
  * Check if the client supports the AskUserQuestion tool via capability declaration.
  * Clients declare support via: { clientCapabilities: { _meta: { askUserQuestion: true } } }
@@ -604,19 +624,21 @@ export class ClaudeAcpAgent implements Agent {
       }
 
       if (toolName === "AskUserQuestion") {
+        const askInput = toolInput as unknown as AskUserQuestionInput;
+
         // Check client capability
         if (!supportsAskUserQuestion(this.clientCapabilities)) {
           // Graceful fallback - return empty answers, Claude will ask in chat instead
           return {
             behavior: "allow",
-            updatedInput: { ...toolInput, answers: {} },
+            updatedInput: { ...askInput, answers: {} },
           };
         }
 
         // Build options from questions for requestPermission
-        const questions = (toolInput.questions || []) as any[];
-        const options = questions.flatMap((q: any, qIdx: number) =>
-          q.options.map((opt: any, optIdx: number) => ({
+        const questions = askInput.questions ?? [];
+        const options = questions.flatMap((q: AskUserQuestionItem, qIdx: number) =>
+          q.options.map((opt: AskUserQuestionOption, optIdx: number) => ({
             kind: "allow_once" as const,
             name: opt.label,
             optionId: `q${qIdx}_opt${optIdx}`,
@@ -624,7 +646,7 @@ export class ClaudeAcpAgent implements Agent {
         );
 
         // Add "Other" option for each question
-        questions.forEach((_: any, qIdx: number) => {
+        questions.forEach((_: AskUserQuestionItem, qIdx: number) => {
           options.push({
             kind: "allow_once" as const,
             name: "Other",
@@ -637,11 +659,11 @@ export class ClaudeAcpAgent implements Agent {
           sessionId,
           toolCall: {
             toolCallId: toolUseID,
-            rawInput: toolInput,
-            title: questions[0]?.header || "Question",
+            rawInput: askInput,
+            title: questions[0]?.header ?? "Question",
           },
           _meta: {
-            askUserQuestion: toolInput, // Full structure for rich UI
+            askUserQuestion: askInput,
           },
         });
 
@@ -653,7 +675,8 @@ export class ClaudeAcpAgent implements Agent {
         const answers: Record<string, string | string[]> = {};
 
         // Check for structured answers in _meta (preferred)
-        const metaAnswers = (response as any)._meta?.answers;
+        const responseMeta = response._meta as Record<string, unknown> | undefined;
+        const metaAnswers = responseMeta?.answers as Record<string, string | string[]> | undefined;
         if (metaAnswers) {
           Object.assign(answers, metaAnswers);
         } else if (response.outcome?.outcome === "selected" && response.outcome.optionId) {
@@ -664,14 +687,14 @@ export class ClaudeAcpAgent implements Agent {
             const optIdx = parseInt(match[2], 10);
             const q = questions[qIdx];
             if (q) {
-              answers[q.question] = q.options[optIdx]?.label || "";
+              answers[q.question] = q.options[optIdx]?.label ?? "";
             }
           }
         }
 
         return {
           behavior: "allow",
-          updatedInput: { ...toolInput, answers },
+          updatedInput: { ...askInput, answers },
         };
       }
 
@@ -739,20 +762,6 @@ export class ClaudeAcpAgent implements Agent {
         };
       }
     };
-  }
-
-  /**
-   * Format a fallback message for AskUserQuestion when the client doesn't support the feature.
-   * This allows the user to see the questions and respond in chat.
-   */
-  private formatAskUserQuestionFallback(toolInput: any): string {
-    const questions = toolInput.questions || [];
-    return questions
-      .map(
-        (q: any, i: number) =>
-          `${i + 1}. ${q.question}\n   Options: ${q.options?.map((o: any) => o.label).join(", ")}`,
-      )
-      .join("\n\n");
   }
 
   private async createSession(

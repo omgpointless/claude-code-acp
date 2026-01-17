@@ -1,5 +1,6 @@
 import { PlanEntry, ToolCallContent, ToolCallLocation, ToolKind } from "@agentclientprotocol/sdk";
 import { SYSTEM_REMINDER } from "./mcp-server.js";
+import { AskUserQuestionInput, AskUserQuestionItem } from "./acp-agent.js";
 import * as diff from "diff";
 import { ToolResultBlockParam, WebSearchToolResultBlockParam } from "@anthropic-ai/sdk/resources";
 
@@ -373,17 +374,17 @@ export function toolInfoFromToolUse(toolUse: any): ToolInfo {
       };
 
     case "AskUserQuestion": {
-      const questions = input?.questions || [];
-      const firstQ = questions[0];
+      const askInput = input as AskUserQuestionInput | undefined;
+      const questions = askInput?.questions ?? [];
       return {
-        title: firstQ?.header || `Questions (${questions.length})`,
+        title: questions[0]?.header ?? `Questions (${questions.length})`,
         kind: "other",
-        content: questions.map((q: any) => ({
+        content: questions.map((q: AskUserQuestionItem) => ({
           type: "content",
           content: {
             type: "text",
-            text: `**${q.header || "Question"}**: ${q.question}\nOptions: ${
-              q.options?.map((o: any) => o.label).join(", ") || "None"
+            text: `**${q.header ?? "Question"}**: ${q.question}\nOptions: ${
+              q.options?.map((o) => o.label).join(", ") ?? "None"
             }`,
           },
         })),
