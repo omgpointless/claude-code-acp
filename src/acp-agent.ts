@@ -146,6 +146,23 @@ export type ToolUpdateMeta = {
   };
 };
 
+/**
+ * Metadata for status updates (e.g., compaction notifications).
+ * Mirrors SDK types directly - thin wrapper, not abstraction.
+ * Sent via agent_message_chunk with _meta field to remain ACP-compliant.
+ */
+export type StatusUpdateMeta = {
+  claudeCode?: {
+    /* From SDKStatusMessage - 'compacting' when active, null when cleared */
+    status?: "compacting" | null;
+    /* From SDKCompactBoundaryMessage - present when compaction completes */
+    compactMetadata?: {
+      trigger: "manual" | "auto";
+      preTokens: number;
+    };
+  };
+};
+
 type ToolUseCache = {
   [key: string]: {
     type: "tool_use" | "server_tool_use" | "mcp_tool_use";
@@ -295,9 +312,40 @@ export class ClaudeAcpAgent implements Agent {
           switch (message.subtype) {
             case "init":
               break;
-            case "compact_boundary":
-            case "hook_response":
             case "status":
+              await this.client.sessionUpdate({
+                sessionId: params.sessionId,
+                update: {
+                  sessionUpdate: "agent_message_chunk",
+                  content: {
+                    type: "text",
+                    text: message.status === "compacting" ? "Compacting conversation..." : "",
+                  },
+                  _meta: {
+                    claudeCode: { status: message.status },
+                  } satisfies StatusUpdateMeta,
+                },
+              });
+              break;
+            case "compact_boundary":
+              await this.client.sessionUpdate({
+                sessionId: params.sessionId,
+                update: {
+                  sessionUpdate: "agent_message_chunk",
+                  content: { type: "text", text: "" },
+                  _meta: {
+                    claudeCode: {
+                      compactMetadata: {
+                        trigger: message.compact_metadata.trigger,
+                        preTokens: message.compact_metadata.pre_tokens,
+                      },
+                    },
+                  } satisfies StatusUpdateMeta,
+                },
+              });
+              break;
+            case "hook_response":
+            case "task_notification":
               // Todo: process via status api: https://docs.claude.com/en/docs/claude-code/hooks#hook-output
               break;
             default:
