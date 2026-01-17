@@ -1,3 +1,6 @@
 node_modules
 dist
 .DS_Store
+
+# Private claude config (not ready to share yet)
+.claude/
